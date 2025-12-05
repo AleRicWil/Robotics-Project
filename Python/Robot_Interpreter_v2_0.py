@@ -12,7 +12,7 @@ import time
 import math
 
 # Constants (Steppers, unchanged)
-G_B = 5.0   # Gear ratio for base stepper
+G_B = 110.0 / 21.0   # Gear ratio for base stepper
 G_RL = 7.8  # Gear ratio for wrist steppers
 DEG_TOLERANCE = 1e-6
 MAX_MOTOR_RPS = 1.56  # Max RPS for steppers
@@ -291,6 +291,20 @@ class RobotInterpreter:
             except queue.Full:
                 print("Wrist queue full")
                 return False
+
+    def enable_hold(self):
+        """
+        Sends 'H' command to enable persistent hold mode on steppers.
+        Concept: Overrides auto-disable when idle; useful for maintaining torque without motion.
+        """
+        self._send_commands(['H'])
+
+    def disable_hold(self):
+        """
+        Sends 'R' command to disable persistent hold mode on steppers.
+        Concept: Reverts to normal global enable/disable based on activity.
+        """
+        self._send_commands(['R'])
 
     def _send_commands(self, commands: list[str]):
         """

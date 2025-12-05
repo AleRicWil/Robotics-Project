@@ -59,6 +59,13 @@ class JointControlUI:
         self.status_label = ttk.Label(serial_frame, text="Not Connected", foreground="red", font=('Arial', 12, 'bold'))
         self.status_label.pack(side='left', padx=5)
 
+        self.style.configure('Hold.TButton', background='#FFC107', foreground='white')  # Yellow for hold
+        self.style.map('Hold.TButton', background=[('active', '#FFA000')])
+        self.style.configure('Release.TButton', background='#FF6B6B', foreground='white')  # Red for release
+        self.style.map('Release.TButton', background=[('active', '#FF4757')])
+        self.hold_button = ttk.Button(serial_frame, text="Hold Motors", command=self.toggle_hold, style='Hold.TButton')
+        self.hold_button.pack(side='left', padx=5)
+
         self.displacement_entries = {}
         self.speed_entries = {}
 
@@ -265,11 +272,38 @@ class JointControlUI:
             self.interpreter = RobotInterpreter(self.ser)
             self.status_label.config(text="Connected", foreground="green")
             self.message_label.config(text=f"Connected to {port}.", foreground="green")
+            self.hold_active = False
+            self.hold_button.config(text="Hold Motors", style='Hold.TButton')
         except Exception as e:
             self.ser = None
             self.interpreter = None
             self.status_label.config(text="Not Connected", foreground="red")
             self.message_label.config(text=f"Failed: {e}", foreground="red")
+
+    def toggle_hold(self):
+        """
+        Toggles stepper hold mode via serial commands.
+        Concept: Provides UI control for persistent torque hold; tracks state locally for button feedback.
+        """
+        if self.ser is None or self.interpreter is None:
+            self.message_label.config(text="No connection.", foreground="red")
+            return
+        try:
+            # Initialize state if not set
+            if not hasattr(self, 'hold_active'):
+                self.hold_active = False
+            if not self.hold_active:
+                self.interpreter.enable_hold()
+                self.hold_button.config(text="Release Motors", style='Release.TButton')
+                self.message_label.config(text="Hold mode enabled.", foreground="green")
+                self.hold_active = True
+            else:
+                self.interpreter.disable_hold()
+                self.hold_button.config(text="Hold Motors", style='Hold.TButton')
+                self.message_label.config(text="Hold mode disabled.", foreground="blue")
+                self.hold_active = False
+        except Exception as e:
+            self.message_label.config(text=f"Toggle failed: {e}", foreground="red")
 
     def query_joint(self, joint: int):
         """

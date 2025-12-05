@@ -32,6 +32,15 @@ dh = [
     [0.0, 0.00, 0.05, 0.0],       # J5 pitch
 ]
 jt_types = ['r'] * 5
+# Real measured limits in radians (example – adjust to your robot!)
+JOINT_LIMITS = [
+    [-180, 180],        # J1 base ±180°
+    [-135, 135],        # J2 
+    [-180, 180],        # J3
+    [-120, 120],        # J4 servo X
+    [-120, 120],        # J5 servo Y
+]
+JOINT_LIMITS = np.radians(JOINT_LIMITS)
 
 # Gripper offset along x-axis
 tip = tr.se3(np.eye(3), np.array([0.05, 0.0, 0.0]))
@@ -86,7 +95,7 @@ def send_to_hardware(interpreter, target_q_deg, current_q_deg, speed, gripper_an
 
 def main(sim_only=True, port=None):
     """Main function for demo, handles sim or hardware mode."""
-    arm = SerialArm(dh, jt=jt_types, tip=tip)
+    arm = SerialArm(dh, jt=jt_types, tip=tip, joint_limits=JOINT_LIMITS)
     viz = VizScene()
     viz.add_arm(arm, draw_frames=True)
     

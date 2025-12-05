@@ -99,8 +99,6 @@ class SerialArm:
     frame, and frame n located at the end of link n.
 
     """
-
-
     def __init__(self, dh, jt=None, base=eye, tip=eye, joint_limits=None, gripper=False):
         """
         arm = SerialArm(dh, joint_type, base=I, tip=I, radians=True, joint_limits=None, gripper=False)
@@ -148,7 +146,6 @@ class SerialArm:
         self.max_reach = 0.0
         for dh in self.dh:
             self.max_reach += np.linalg.norm(np.array([dh[1], dh[2]]))
-
 
 
     def __str__(self):
@@ -306,33 +303,32 @@ class SerialArm:
         return J
 
 
-    def ik_position(self, target, q0=None, method='pinv', tol=1e-6, max_iter=1000, K=None, kd=0.01, 
-                    force=False, debug=False, debug_step=False, return_deg=False):
+    def ik_position(self, target, q0=None, method='pinv', tol=1e-6, max_iter=100, K=None, kd=0.01, force=False, debug=False, debug_step=False, return_deg=False):
         """
-        q, error, count, success, message = arm.ik(target, q0=None, method='pinv', tol=1e-6, max_iter=1000, K=None, kd=0.01, force=False, debug=False, debug_step=False, return_deg=False)
-        Description:
-        Attempts to find a joint configuration "q" that results in a desired end-effector position given by "target"
-        The method can be either 'pinv' for damped pseudo-inverse, or 'J_T' for Jacobian Transpose
+            q, error, count, success, message = arm.ik_position(target, q0=None, method='pinv', tol=1e-6, max_iter=100, K=None, kd=0.01, force=False, debug=False, debug_step=False, return_deg=False)
+            Description:
+            Given a 3x1 target position in frame 0, find a joint configuration "q" that results in a desired end-effector position given by "target"
+            The method can be either 'pinv' for damped pseudo-inverse, or 'J_T' for Jacobian Transpose
 
-        Parameters:
-        target - 3x1 numpy array, the desired end-effector position in frame 0
-        q0 - n length numpy array, the seed joint configuration, defaults to zeros if none given
-        method - string, either 'pinv' or 'J_T'
-        tol - float, the position error tolerance for convergence
-        max_iter - int, the maximum number of iterations before returning a failure
-        K - 3x3 numpy array, the positive definite gain matrix, defaults to eye(3)
-        kd - float, the positive damping factor for the damped pseudo-inverse method
-        force - bool, whether to force a solution even if target is out of workspace
-        debug - bool, whether to display a visualization of the process
-        debug_step - bool, whether to wait for user input between iterations in debug mode
-        return_deg - bool, if True, returns q in degrees (for direct hardware integration)
+            Parameters:
+            target - 3x1 numpy array, the desired end-effector position in frame 0
+            q0 - n length numpy array, the seed joint configuration, defaults to zeros if none given
+            method - string, either 'pinv' or 'J_T'
+            tol - float, the position error tolerance for convergence
+            max_iter - int, the maximum number of iterations before returning a failure
+            K - 3x3 numpy array, the positive definite gain matrix, defaults to eye(3)
+            kd - float, the positive damping factor for the damped pseudo-inverse method
+            force - bool, whether to force a solution even if target is out of workspace
+            debug - bool, whether to display a visualization of the process
+            debug_step - bool, whether to wait for user input between iterations in debug mode
+            return_deg - bool, if True, returns q in degrees (for direct hardware integration)
 
-        Returns:
-        q - n length numpy array, the joint configuration that achieves the desired position
-        error - 3x1 numpy array, the position error at the end of the iteration
-        count - int, the number of iterations taken to converge or fail
-        success - bool, whether the solution converged to the desired tolerance or not
-        message - string, the exit message of the function, either converged or max iterations reached
+            Returns:
+            q - n length numpy array, the joint configuration that achieves the desired position
+            error - 3x1 numpy array, the position error at the end of the iteration
+            count - int, the number of iterations taken to converge or fail
+            success - bool, whether the solution converged to the desired tolerance or not
+            message - string, the exit message of the function, either converged or max iterations reached
         """
 
         if K is None:
@@ -345,6 +341,11 @@ class SerialArm:
             q = np.array([0.0]*self.n)
         else:
             q = np.array(q0)
+
+        # Clamp initial q to joint limits if defined (industry practice for safe starting configs)
+        if self.qlim is not None:
+            for i in range(self.n):
+                q[i] = np.clip(q[i], self.qlim[i][0], self.qlim[i][1])
 
         # initializing some variables in case checks below don't work
         error = None
@@ -415,6 +416,11 @@ class SerialArm:
             # here we assume that delta_t has been included in the gain matrix K. 
             q = q + qdelta
 
+            # Clamp updated q to joint limits if defined (prevents hardware damage, follows industry safety standards)
+            if self.qlim is not None:
+                for i in range(self.n):
+                    q[i] = np.clip(q[i], self.qlim[i][0], self.qlim[i][1])
+
             if debug==True: 
                 viz.update(qs=[q0, q])
                 if debug_step == True:
@@ -471,7 +477,6 @@ class SerialArm:
             Z = None
 
         return Z
-
 
 
 if __name__ == "__main__":
