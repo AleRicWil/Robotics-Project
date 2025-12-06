@@ -403,7 +403,8 @@ class SerialArm:
                     time.sleep(1.0/2.0)
 
             e = get_error(q)
-            print("error is: ", np.linalg.norm(e), "\t count is: ", count)
+            if debug:
+                print("error is: ", np.linalg.norm(e), "\t count is: ", count)
 
         if debug==True: 
             viz.close_viz()

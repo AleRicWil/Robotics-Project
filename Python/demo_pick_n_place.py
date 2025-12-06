@@ -41,20 +41,42 @@ p_pick       = np.array([pick_xy[0], pick_xy[1], z_pick])
 p_above_box  = np.array([box_xy[0],  box_xy[1],  z_above])
 p_place      = np.array([box_xy[0],  box_xy[1],  z_place])
 
-K = np.eye(3) * 2.0  # position gain for IK
+K_fast  = np.eye(3) * 1.0   # gain for coarse (pinv) solve
+K_fine  = np.eye(3) * 3.0   # gain for fine (J_T) solve
 
 def solve_ik_pos(target, q_seed, label=""):
-    """Helper to call ik_position with a seed and print a bit of debug info."""
-    q_sol, e, iters, success, msg = arm.ik_position(
+    # ---- coarse solve with pinv: get close quickly ----
+    q_coarse, e_c, iters_c, success_c, msg_c = arm.ik_position(
         target,
         q0=q_seed,
-        method='J_T',
-        K=K,
-        kd=0.001,
-        max_iter=500
+        method='pinv',
+        K=K_fast,
+        kd=0.01,        # you can tweak this damping if needed
+        max_iter=50,    # don't waste time here
+        tol=1e-2,       # ~1 cm is fine for coarse
+        debug=False
     )
-    print(f"{label} IK -> success={success}, iters={iters}, err={e}, msg={msg}")
-    return q_sol
+
+    # ---- fine solve with J_T: polish the result ----
+    q_fine, e_f, iters_f, success_f, msg_f = arm.ik_position(
+        target,
+        q0=q_coarse,    # start from the coarse solution
+        method='J_T',
+        K=K_fine,
+        kd=0.001,       # unused for J_T, but fine to leave
+        max_iter=200,
+        tol=1e-3,       # ~1 mm final accuracy
+        debug=False
+    )
+
+    print(
+        f"{label} IK -> "
+        f"coarse(iters={iters_c}, |e|={np.linalg.norm(e_c):.4f}, ok={success_c}); "
+        f"fine(iters={iters_f}, |e|={np.linalg.norm(e_f):.4f}, ok={success_f})"
+    )
+
+    return q_fine
+
 
 n = arm.n
 q_home = np.zeros(n)
