@@ -50,7 +50,7 @@ JOINT_LIMITS_DEG = [
     [-120, 120],        # J4 servo X
     [-120, 120],        # J5 servo Y
 ]
-JOINT_LIMITS = np.radians(JOINT_LIMITS_DEG)
+JOINT_LIMITS_RAD = np.radians(JOINT_LIMITS_DEG)
 
 # Gripper offset along x-axis (tool frame)
 tip = tr.se3(np.eye(3), np.array([0.05, 0.0, 0.0]))
@@ -294,7 +294,7 @@ def plan_waypoints(arm: SerialArm) -> list[np.ndarray]:
 
 def main(sim_only: bool = True, port: str | None = None):
     """Main function for demo, handles sim or hardware mode."""
-    arm = SerialArm(dh, jt=jt_types, tip=tip, joint_limits=JOINT_LIMITS)
+    arm = SerialArm(dh, jt=jt_types, tip=tip, joint_limits=JOINT_LIMITS_RAD)
 
     viz = VizScene()
     viz.add_arm(arm, draw_frames=True)
