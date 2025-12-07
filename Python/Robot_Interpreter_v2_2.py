@@ -19,7 +19,7 @@ import math
 G_B = 110.0 / 21.0   # Gear ratio for base stepper
 G_RL = 7.8  # Gear ratio for wrist steppers
 DEG_TOLERANCE = 1e-6
-MAX_MOTOR_RPS = 1.56  # Max RPS for steppers
+MAX_MOTOR_RPS = 1.00  # Max RPS for steppers
 ACCEL = 1.0
 
 # Constants (Servos, from specs)
@@ -177,15 +177,15 @@ class RobotInterpreter:
                         
                         if 'R motor stopped.' in line:
                             self.r_idle = True
-                        if 'L motor stopped.' in line:
+                        elif 'L motor stopped.' in line:
                             self.l_idle = True
-                        if 'B motor stopped.' in line:
+                        elif 'B motor stopped.' in line:
                             self.b_idle = True
-                        if 'X servo stopped.' in line:
+                        elif 'X servo stopped.' in line:
                             self.x_idle = True
-                        if 'Y servo stopped.' in line:
+                        elif 'Y servo stopped.' in line:
                             self.y_idle = True
-                        if 'Z servo stopped.' in line:
+                        elif 'Z servo stopped.' in line:
                             self.z_idle = True
                     except Exception:
                         pass
@@ -370,14 +370,14 @@ class RobotInterpreter:
         Sends 'H' command to enable persistent hold mode on steppers.
         Concept: Overrides auto-disable when idle; useful for maintaining torque without motion.
         """
-        self._send_commands(['H'])
+        self._send_commands(['H', 'H'])
 
     def disable_hold(self):
         """
         Sends 'R' command to disable persistent hold mode on steppers.
         Concept: Reverts to normal global enable/disable based on activity.
         """
-        self._send_commands(['R'])
+        self._send_commands(['R', 'R'])
 
     def _send_commands(self, commands: list[str]):
         """
@@ -401,7 +401,7 @@ class RobotInterpreter:
                 self.y_idle = False
             elif cmd.startswith('Z '):
                 self.z_idle = False
-            time.sleep(0.005)
+            time.sleep(0.010)
 
     def query_motor(self, motor_id: str) -> tuple[float, float]:
         """
@@ -415,11 +415,37 @@ class RobotInterpreter:
             time.sleep(0.05)
             line1 = self.ser.readline().decode().strip()
             line2 = self.ser.readline().decode().strip()
+            line3 = self.ser.readline().decode().strip()
+        
         if 'steps' in line1:
-            value1 = float(line1.split(': ')[1])  # steps
+            try: value1 = float(line1.split(': ')[1])  # steps
+            except: 
+                print('Query error: no steps')
+                value1 = None
         else:
-            value1 = float(line1.split(': ')[1])  # angle
-        value2 = float(line2.split(': ')[1])  # RPS/speed
+            try: value1 = float(line1.split(': ')[1])  # angle
+            except:
+                print('Query error: no angle')
+                value1 = None
+        
+        try: value2 = float(line2.split(': ')[1])  # RPS/speed
+        except:
+            print('Query error: no speed')
+            value2 = None
+
+        if 'R motor stopped.' in line3:
+            self.r_idle = True
+        elif 'L motor stopped.' in line3:
+            self.l_idle = True
+        elif 'B motor stopped.' in line3:
+            self.b_idle = True
+        elif 'X servo stopped.' in line3:
+            self.x_idle = True
+        elif 'Y servo stopped.' in line3:
+            self.y_idle = True
+        elif 'Z servo stopped.' in line3:
+            self.z_idle = True
+
         return value1, value2
 
     def get_current_angle(self, joint: int) -> float:

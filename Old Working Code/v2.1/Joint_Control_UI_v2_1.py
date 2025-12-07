@@ -22,15 +22,12 @@ import transforms_v2_1 as tr
 from example_sim_scoop_v2_1 import dh, jt_types, CARRY_TILT, CARRY_TILT_DEG, JOINT_LIMITS_DEG, JOINT_LIMITS_RAD, tip
 
 # Configurable update rate for current angle display (Hz)
-UPDATE_RATE_HZ = 1  # Default 1Hz; adjust for smoother display vs. performance
-# Delay in seconds between sending command sets (tune based on motor speeds; e.g., 0.2-1.0s)
-# Concept: Paces commands to prevent queue saturation, following rate-limiting patterns in robotic interfaces.
-COMMAND_DELAY_SEC = 0.5
+UPDATE_RATE_HZ = 2  # Default 1Hz; adjust for smoother display vs. performance
 
 # Constants
 BAUD_RATE = 115200
 TIMEOUT = 1
-DEFAULT_RPS = '0.05'
+DEFAULT_RPS = '0.1'
 NEGATIVE_DELTAS = [-360, -180, -90, -10, -5, -1]
 POSITIVE_DELTAS = [1, 5, 10, 90, 180, 360]
 SERVO_JOINTS = [4, 5, 6]  # Joints using servos. 6 is actually the gripper. Called joint for convenience
@@ -40,7 +37,7 @@ SERVO_JOINTS = [4, 5, 6]  # Joints using servos. 6 is actually the gripper. Call
 GRIPPER_OPEN = 0.0      # deg, adjust for hardware calibration
 GRIPPER_CLOSE = 90.0    # deg, adjust for hardware
 DEFAULT_SPEED = float(DEFAULT_RPS)  # RPS for motions
-N_STEPS = 10            # interpolation steps per segment (reduced for hardware to avoid queue overflow)
+N_STEPS = 1            # interpolation steps per segment (reduced for hardware to avoid queue overflow)
 # CARRY_TILT_DEG = 15.0
 # CARRY_TILT = np.radians(CARRY_TILT_DEG)
 
@@ -550,13 +547,22 @@ class JointControlUI:
 
     def _interpolate(self, q_start: np.ndarray, q_end: np.ndarray, n_steps: int = N_STEPS):
         """Generator yielding linearly interpolated joint configurations."""
-        for s in np.linspace(0.0, 1.0, n_steps):
-            yield (1.0 - s) * q_start + s * q_end
+        # Concept: Linear interpolation is a standard method in robotics for smooth trajectory generation
+        # between waypoints. Here, we yield points from q_start to q_end. To bypass interpolation 
+        # (i.e., move directly to q_end without intermediate steps), set n_steps=1, which yields 
+        # only q_end. This follows industry practice for optional smoothing in motion planning, 
+        # enhancing flexibility without altering the calling code structure.
+        if n_steps == 1:
+            yield q_end  # Directly yield the end configuration to bypass interpolation
+        else:
+            # Standard linear interpolation over n_steps points, including start and end
+            for s in np.linspace(0.0, 1.0, n_steps):
+                yield (1.0 - s) * q_start + s * q_end
 
     def _with_carry_tilt(self, q: np.ndarray, tilt: float = CARRY_TILT) -> np.ndarray:
         """Return a copy of q with the last joint tilted back by `tilt` radians."""
         q_tilt = np.array(q, dtype=float).copy()
-        q_tilt[4] += tilt  # J5 is index 4
+        q_tilt[4] -= tilt  # J5 is index 4
         return q_tilt
 
     def _plan_waypoints(self, arm: SerialArm) -> list[np.ndarray]:
@@ -566,18 +572,18 @@ class JointControlUI:
           dump → return home.
         """
         # Cartesian positions (m)
-        pick_xy = np.array([0.0, 0.3])
-        box_xy = np.array([-0.25, -0.20])
-        z_above = 0.35
-        z_table = 0.15          # where the scoop scrapes
-        z_carry = 0.25          # level-carry height above table
+        pick_xy = np.array([0.5, 0.0])
+        box_xy = np.array([-0.2, -0.2])
+        z_above = 0.40
+        z_table = 0.05          # where the scoop scrapes
+        z_carry = 0.50          # level-carry height above table
 
         # Positions along the scoop & carry path
-        p_above_scoop = np.array([pick_xy[0] - 0.10, pick_xy[1], z_carry])
-        p_scoop_start = np.array([pick_xy[0] - 0.10, pick_xy[1], z_table])
-        p_scoop_end   = np.array([pick_xy[0] + 0.05, pick_xy[1], z_table])
+        p_above_scoop = np.array([pick_xy[0], pick_xy[1], z_carry])
+        p_scoop_start = np.array([pick_xy[0], pick_xy[1], z_table])
+        p_scoop_end   = np.array([pick_xy[0], pick_xy[1], z_table])
         p_above_bucket = np.array([box_xy[0], box_xy[1], z_carry])
-        p_drop         = np.array([box_xy[0], box_xy[1], z_table])
+        p_drop         = np.array([box_xy[0], box_xy[1], z_above])
 
         q_home = np.zeros(arm.n)
 
@@ -604,7 +610,7 @@ class JointControlUI:
 
         # Dump pose: intentionally break the level constraint
         q_dump = q_drop_carry.copy()
-        q_dump[4] += np.radians(-80.0)  # tip forward to pour out the scoop
+        q_dump[4] -= np.radians(-80.0)  # tip forward to pour out the scoop
 
         waypoints = [
             q_home,
@@ -621,26 +627,42 @@ class JointControlUI:
         ]
         return waypoints
 
-    def _wait_all_idle(self, max_wait = 50.0):
-        """Block until all motors/servos report idle."""
-        
-        print('Entering wait')
+    def _wait_all_idle(self, max_wait: float = 50.0, query_period: float = 0.1) -> bool:
+        # Allow all motor commands to be sent before queries
+        time.sleep(0.5)    
+        print('Waiting for motion to finish')
         start = time.time()
-        while not (
-            self.interpreter.b_idle
-            and self.interpreter.r_idle
-            and self.interpreter.l_idle
-            and self.interpreter.x_idle
-            and self.interpreter.y_idle
-            and self.interpreter.z_idle
-        ):
-            time.sleep(0.1)
-            if time.time() - start >= max_wait: 
-                print('Wait timer expired')
-                break
+        next_query_time = time.time() + query_period  # start polling almost immediately after
+
+        # ONE-TIME forced refresh — eliminates the race condition completely
+        for motor_id in 'BRLXYZ':
+            self.interpreter.query_motor(motor_id)
+            time.sleep(0.022)  # ~115200 baud → 22 ms is safe for 3 lines response
+
+        # Now your existing (excellent) loop runs with correct, fresh flags
+        while not (self.interpreter.b_idle and self.interpreter.r_idle and
+                self.interpreter.l_idle and self.interpreter.x_idle and
+                self.interpreter.y_idle and self.interpreter.z_idle):
+
+            now = time.time()
+            if now >= next_query_time:
+                # Only query the ones that are still busy
+                for motor_id, attr in [('B','b'), ('R','r'), ('L','l'), ('X','x'), ('Y','y'), ('Z','z')]:
+                    if not getattr(self.interpreter, f'{attr}_idle'):
+                        self.interpreter.query_motor(motor_id)
+                        # time.sleep(0.022)
+                next_query_time = now + query_period
+
+            if now - start >= max_wait:
+                print("Timeout in _wait_all_idle")
+                return False
+
             # print(self.interpreter.b_idle, self.interpreter.r_idle, self.interpreter.l_idle, 
             #       self.interpreter.x_idle, self.interpreter.y_idle, self.interpreter.z_idle)
-        # print('Finished wait')
+            time.sleep(0.01)
+
+        print(f"Motion complete\n")
+        return True
 
     def _send_to_hardware(
         self,
@@ -706,14 +728,13 @@ class JointControlUI:
             for i in range(len(waypoints_rad) - 1):
                 q_start_rad = waypoints_rad[i]
                 q_end_rad = waypoints_rad[i + 1]
-                print('Waypoint: ', i, np.degrees(q_start_rad), np.degrees(q_end_rad))
+                print(f'\nWaypoint: ', i, np.degrees(q_end_rad))
 
                 for j, q_rad in enumerate(self._interpolate(q_start_rad, q_end_rad)):
                     q_deg = np.degrees(q_rad)
                     # print(f'\tStep: ', j, q_deg)
                     self._send_to_hardware(q_deg, current_q_deg, DEFAULT_SPEED)
                     current_q_deg = q_deg
-                    # time.sleep(COMMAND_DELAY_SEC)
 
                 # Insert gripper commands at specific points
                 # After scoop_end (index 3)

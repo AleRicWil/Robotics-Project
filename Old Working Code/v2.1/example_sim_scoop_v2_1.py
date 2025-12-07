@@ -29,7 +29,7 @@ SERIAL_BAUD = 115200
 N_STEPS = 80            # interpolation steps per segment
 
 # How much to tilt the scoop back while carrying (deg)
-CARRY_TILT_DEG = 15.0
+CARRY_TILT_DEG = 20.0
 CARRY_TILT = np.radians(CARRY_TILT_DEG)
 
 # DH parameters for the arm (5-DOF positioning, gripper separate)
@@ -47,8 +47,8 @@ JOINT_LIMITS_DEG = [
     [-180, 180],        # J1 base ±180°
     [-135, 135],        # J2
     [-180, 180],        # J3
-    [-120, 120],        # J4 servo X
-    [-120, 120],        # J5 servo Y
+    [-130, 130],        # J4 servo X
+    [-135, 135],        # J5 servo Y
 ]
 JOINT_LIMITS_RAD = np.radians(JOINT_LIMITS_DEG)
 
@@ -173,7 +173,7 @@ def interpolate(q_start: np.ndarray, q_end: np.ndarray, n_steps: int = N_STEPS):
 def with_carry_tilt(q: np.ndarray, tilt: float = CARRY_TILT) -> np.ndarray:
     """Return a copy of q with the last joint tilted back by `tilt` radians."""
     q_tilt = np.array(q, dtype=float).copy()
-    q_tilt[4] += tilt  # J5 is index 4
+    q_tilt[4] -= tilt  # J5 is index 4
     return q_tilt
 
 
@@ -236,18 +236,18 @@ def plan_waypoints(arm: SerialArm) -> list[np.ndarray]:
       dump → return home.
     """
     # Cartesian positions (m)
-    pick_xy = np.array([0.0, 0.3])
-    box_xy = np.array([-0.25, -0.20])
-    z_above = 0.35
-    z_table = 0.15          # where the scoop scrapes
-    z_carry = 0.25          # level-carry height above table
+    pick_xy = np.array([0.5, 0.0])
+    box_xy = np.array([-0.2, -0.2])
+    z_above = 0.40
+    z_table = 0.00          # where the scoop scrapes
+    z_carry = 0.50          # level-carry height above table
 
     # Positions along the scoop & carry path
-    p_above_scoop = np.array([pick_xy[0] - 0.10, pick_xy[1], z_carry])
-    p_scoop_start = np.array([pick_xy[0] - 0.10, pick_xy[1], z_table])
-    p_scoop_end   = np.array([pick_xy[0] + 0.05, pick_xy[1], z_table])
+    p_above_scoop = np.array([pick_xy[0], pick_xy[1], z_carry])
+    p_scoop_start = np.array([pick_xy[0], pick_xy[1], z_table])
+    p_scoop_end   = np.array([pick_xy[0], pick_xy[1], z_table])
     p_above_bucket = np.array([box_xy[0], box_xy[1], z_carry])
-    p_drop         = np.array([box_xy[0], box_xy[1], z_table])
+    p_drop         = np.array([box_xy[0], box_xy[1], z_above])
 
     q_home = np.zeros(arm.n)
 
@@ -274,7 +274,7 @@ def plan_waypoints(arm: SerialArm) -> list[np.ndarray]:
 
     # Dump pose: intentionally break the level constraint
     q_dump = q_drop_carry.copy()
-    q_dump[4] += np.radians(-80.0)  # tip forward to pour out the scoop
+    q_dump[4] -= np.radians(-80.0)  # tip forward to pour out the scoop
 
     waypoints = [
         q_home,
